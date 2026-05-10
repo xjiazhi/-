@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美时光舞蹈课表管理</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <style>
+        :root { --cell-height: 90px; }
+        .table-res { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        #capture-area { min-width: 1000px; }
+        .grid-table { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
+        .grid-table td { height: var(--cell-height); padding: 5px; border: 1px solid #f1f5f9; cursor: cell; position: relative; }
+        .course-card { height: 100%; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; text-align: center; padding: 4px; pointer-events: none; line-height: 1em;}
+        //.course-card > span {transform: translateY(-5px);}
+    </style>
+</head>
+<body class="bg-slate-100 pb-20">
+    <div id="app" class="max-w-6xl mx-auto p-4">
+        
+        <div class="bg-white rounded-2xl shadow-sm p-6 mb-6 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="flex-1">
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">最后保存: {{ lastUpdate || '从未' }}</p>
+                <div class="flex flex-wrap gap-2">
+                    <div v-for="(t, idx) in teachers" :key="idx" class="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border">
+                        <input v-model="t.name" class="w-16 text-[10px] font-bold bg-transparent border-none focus:ring-0">
+                        <input type="color" v-model="t.color" class="w-4 h-4 border-none cursor-pointer">
+                        <button @click="teachers.splice(idx, 1)" class="text-slate-300 hover:text-red-500">×</button>
+                    </div>
+                    <button @click="teachers.push({name:'新老师', color:'#cbd5e1'})" class="text-[10px] text-blue-500 font-bold">+ 添加老师</button>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button @click="saveToServer" class="px-6 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold shadow-lg">保存并发布</button>
+                <button v-if="hasSaved" @click="exportImage" class="px-6 py-2 bg-rose-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-100">导出课表图</button>
+            </div>
+        </div>
+
+        <div class="table-res">
+            <div id="capture-area" class="bg-white p-10 rounded-[2.5rem] shadow-sm">
+                <div class="text-center mb-10">
+                    <img style="width:30%;margin:auto;" src="/img/logo.png" />
+                    <!--h2 class="text-2xl font-bold text-slate-700 tracking-[0.2em]">美时光舞蹈课程表</h2-->
+                </div>
+                <div class="mb-10">
+                    <p class=" text-slate-900 mt-8 uppercase">更新时间: {{ lastUpdate }}</p>
+                </div>
+                <table class="grid-table">
+                    <thead>
+                        <tr><th v-for="day in weekDays" class="pb-6 text-slate-900 text-xs font-bold">{{ day }}</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="rowIdx in 8">
+                            <template v-for="dayIdx in 7">
+                                <td v-if="shouldRender(dayIdx, rowIdx)" :rowspan="getCell(dayIdx, rowIdx).rowspan" @click="openEdit(dayIdx, rowIdx)">
+                                    <div v-if="getCell(dayIdx, rowIdx).teacher" class="course-card" :style="{ backgroundColor: getTeacherColor(getCell(dayIdx, rowIdx).teacher) }">
+                                        <span class="text-[13px] font-bold">{{ getCell(dayIdx, rowIdx).title }}</span>
+                                        <span class="text-[13px] font-mono">{{ getCell(dayIdx, rowIdx).time }}</span>
+                                        <span v-if="getCell(dayIdx, rowIdx).subtitle" class="text-[13px] rounded mt-1 italic whitespace-pre-wrap">{{ getCell(dayIdx, rowIdx).subtitle }}</span>
+                                        <div v-if="getCell(dayIdx, rowIdx).hasFlower" class="absolute bottom-1 right-1 w-4 h-4 text-white/80">
+                                            <svg viewBox="0 0 18.33 17.61"> <g> <circle cx="8.88" cy="4.15" r="3.65" style="fill: #ffcafd; stroke: #fff; stroke-miterlimit: 10;"/> <circle cx="4.15" cy="8.19" r="3.65" style="fill: #ffcafd; stroke: #fff; stroke-miterlimit: 10;"/> <circle cx="14.19" cy="8.55" r="3.65" style="fill: #ffcafd; stroke: #fff; stroke-miterlimit: 10;"/> <circle cx="6.02" cy="13.46" r="3.65" style="fill: #ffcafd; stroke: #fff; stroke-miterlimit: 10;"/> <circle cx="11.8" cy="13.46" r="3.65" style="fill: #ffcafd; stroke: #fff; stroke-miterlimit: 10;"/> <circle cx="8.88" cy="8.99" r="3.65" style="fill: #ffcafd; stroke: #fff; stroke-miterlimit: 10;"/> </g> </svg>
+                                        </div>
+                                    </div>
+                                    <div v-else class="h-full border border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-300 hover:bg-slate-50 hover:text-slate-500 cursor-pointer transition">+</div>
+                                </td>
+                            </template>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="flex flex-wrap justify-center gap-x-8 gap-y-4 border-t border-slate-50 pt-8">
+    <div v-for="t in teachers" :key="t.name" class="flex items-center justify-center text-[12px] font-bold leading-none course-card" :style="{ backgroundColor: t.color }">
+        
+        <span class="" style="padding:10px;">
+            {{ t.name }}
+        </span>
+    </div>
+</div>
+                <div><img sytle="width:100%" src="/img/foots.jpg" /></div>
+            </div>
+        </div>
+
+        <div v-if="editKey" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div class="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl">
+                <h3 class="text-lg font-bold mb-6">编辑课程</h3>
+                <div class="space-y-4">
+                    <input v-model="form.title" placeholder="课程名称" class="w-full bg-slate-50 p-3 rounded-xl border-none outline-none text-sm">
+                    <textarea v-model="form.subtitle" placeholder="项目内容 (如: 下肢)&#10;支持按回车换行" rows="2" class="w-full bg-slate-50 p-3 rounded-xl border-none outline-none text-sm resize-y"></textarea>
+                    <input v-model="form.time" placeholder="时间 (如: 10:00~12:00)" class="w-full bg-slate-50 p-3 rounded-xl border-none font-mono text-sm">
+                    <select v-model="form.teacher" class="w-full bg-slate-50 p-3 rounded-xl border-none text-sm">
+                        <option value="">-- 删除该课 --</option>
+                        <option v-for="t in teachers" :value="t.name">{{ t.name }}</option>
+                    </select>
+                    <div class="flex items-center gap-4 py-2 border-y border-slate-50">
+                        <div class="flex-1">
+                            <label class="text-[10px] text-slate-400 block mb-1">占用行数: {{form.rowspan}}</label>
+                            <input type="range" min="1" max="6" v-model.number="form.rowspan" class="w-full accent-rose-500">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" v-model="form.hasFlower" id="f-box" class="accent-rose-500">
+                            <label for="f-box" class="text-xs font-bold text-slate-600">标注小花</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-8 flex gap-3">
+                    <button @click="editKey = null" class="flex-1 py-3 bg-slate-50 rounded-xl font-bold text-slate-400">取消</button>
+                    <button @click="submitForm" class="flex-1 py-3 bg-rose-500 text-white rounded-xl font-bold shadow-lg shadow-rose-100">确定</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, onMounted } = Vue;
+        createApp({
+            setup() {
+                const weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+                const teachers = ref([]);
+                const courses = ref({});
+                const lastUpdate = ref('');
+                const hasSaved = ref(false);
+                const editKey = ref(null);
+                const form = reactive({ title: '', subtitle: '', time: '', teacher: '', rowspan: 1, hasFlower: false });
+
+                const load = async () => {
+                    const res = await fetch('api.php');
+                    const data = await res.json();
+                    teachers.value = data.teachers || [];
+                    courses.value = data.courses || {};
+                    lastUpdate.value = data.lastUpdate || '';
+                };
+
+                const openEdit = (d, r) => {
+                    editKey.value = `${d}-${r}`;
+                    const current = courses.value[editKey.value] || {};
+                    Object.assign(form, { title: current.title||'', subtitle: current.subtitle||'', time: current.time||'', teacher: current.teacher||'', rowspan: current.rowspan||1, hasFlower: current.hasFlower||false });
+                };
+
+                const submitForm = () => {
+                    if (!form.teacher) delete courses.value[editKey.value];
+                    else courses.value[editKey.value] = { ...form };
+                    editKey.value = null;
+                    hasSaved.value = false;
+                };
+
+                const saveToServer = async () => {
+                    const now = new Date();
+                    lastUpdate.value = `${now.getFullYear()}年${(now.getMonth()+1).toString().padStart(2,'0')}月${now.getDate().toString().padStart(2,'0')}日`;
+                    await fetch('api.php', { method: 'POST', body: JSON.stringify({ teachers: teachers.value, courses: courses.value, lastUpdate: lastUpdate.value }) });
+                    hasSaved.value = true;
+                    alert("发布成功！日期已更新。");
+                };
+
+                const exportImage = () => {
+                        const captureArea = document.getElementById('capture-area');
+    const cards = captureArea.querySelectorAll('span');
+    cards.forEach(card => {
+        card.style.transform = 'translateY(-6px)';
+    });
+                    html2canvas(document.getElementById('capture-area'), { scale: 2, windowWidth: 1000, onclone: d => d.getElementById('capture-area').style.width = "1000px" }).then(canvas => {
+                        
+                        cards.forEach(card => {
+             card.style.transform = '';
+        });
+                        const link = document.createElement('a');
+                        link.download = `美时光课表_${lastUpdate.value.split(' ')[0]}.png`;
+                        link.href = canvas.toDataURL();
+                        link.click();
+                    });
+                };
+
+                onMounted(load);
+                return { weekDays, teachers, courses, lastUpdate, hasSaved, editKey, form, openEdit, submitForm, saveToServer, exportImage, shouldRender: (d, r) => { for (let i = 1; i < r; i++) { const c = courses.value[`${d}-${i}`]; if (c && c.teacher && c.rowspan > (r - i)) return false; } return true; }, getCell: (d, r) => courses.value[`${d}-${r}`] || { rowspan: 1 }, getTeacherColor: n => teachers.value.find(t => t.name === n)?.color };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
